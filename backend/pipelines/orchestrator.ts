@@ -5,6 +5,8 @@ import { VectorService } from '../services/vectorService.js';
 import { RAGService } from '../services/ragService.js';
 import { GoogleGenAI, Type } from "@google/genai";
 
+const PRIMARY_MODEL = process.env.NEURAL_MODEL_PRIMARY || "gemini-2.5-flash";
+
 /*
   ==============================================================
   [ARCHITECTURE NOTE - ML MICROSERVICES MIGRATION]
@@ -39,7 +41,7 @@ export class MLOrchestrator {
       RAGService.prepareContext();
       
       // 6. FINAL INSIGHT GENERATION (LLM INFERENCE)
-      console.log("[ML PIPELINE: INFERENCE] Delegating heavy NLP extraction to Primary Foundation Model (Gemini)...");
+      console.log("[ML PIPELINE: INFERENCE] Delegating heavy NLP extraction to Primary Neural Foundation Model...");
       const result = await this.callFoundationModel(audioBase64, mimeType, targetLanguage, processingMode);
       
       console.log("[ML PIPELINE: ORCHESTRATOR] Final insights generated successfully.");
@@ -52,7 +54,7 @@ export class MLOrchestrator {
 
   // --- INTERNAL INFERENCE WRAPPER ---
   private static async callFoundationModel(base64Audio: string, mimeType: string, targetLanguage: string, mode: string) {
-      const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const client = new GoogleGenAI({ apiKey: process.env.NEURAL_API_KEY });
     
     let modeInstructions = "";
     if (mode === "Lecture") {
@@ -171,7 +173,7 @@ Perform the following tasks:
     };
 
     const response = await client.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: PRIMARY_MODEL,
       contents: [
         {
           parts: [

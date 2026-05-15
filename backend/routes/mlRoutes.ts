@@ -49,7 +49,7 @@ export default router;
 router.post("/embeddings", async (req, res) => {
   try {
     const { texts } = req.body;
-    const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const client = new GoogleGenAI({ apiKey: process.env.NEURAL_API_KEY });
     const embeddings: number[][] = [];
     
     // Process in chunks to avoid rate limiting
@@ -58,7 +58,7 @@ router.post("/embeddings", async (req, res) => {
       const chunk = texts.slice(i, i + CHUNK_SIZE);
       const promises = chunk.map(async (text: string) => {
         const response = await client.models.embedContent({
-          model: "gemini-embedding-2-preview",
+          model: process.env.NEURAL_MODEL_EMBEDDING || "gemini-embedding-2-preview",
           contents: text
         });
         // @ts-ignore
@@ -78,7 +78,7 @@ router.post("/embeddings", async (req, res) => {
 router.post("/chat", async (req, res) => {
   try {
     const { base64Audio, mimeType, chatHistory, newMessage, retrievedContext } = req.body;
-    const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const client = new GoogleGenAI({ apiKey: process.env.NEURAL_API_KEY });
     
     const systemText = `I have analyzed the session. I am ready to answer your questions in an insightful and structured way. 
 If relevant documents are provided below, use them to answer.
@@ -103,7 +103,7 @@ ${retrievedContext ? `\n--- Relevant Context chunks ---\n${retrievedContext}\n--
     ];
 
     const chat = client.chats.create({
-      model: "gemini-3-flash-preview",
+      model: process.env.NEURAL_MODEL_CHAT || "gemini-3-flash-preview",
       history: formattedHistory
     });
 
@@ -117,10 +117,10 @@ ${retrievedContext ? `\n--- Relevant Context chunks ---\n${retrievedContext}\n--
 router.post("/tts", async (req, res) => {
   try {
     const { textToSpeak } = req.body;
-    const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const client = new GoogleGenAI({ apiKey: process.env.NEURAL_API_KEY });
     
     const response = await client.models.generateContent({
-      model: "gemini-3.1-flash-tts-preview",
+      model: process.env.NEURAL_MODEL_TTS || "gemini-3.1-flash-tts-preview",
       contents: [{ parts: [{ text: textToSpeak }] }],
       config: {
         responseModalities: [Modality.AUDIO],
