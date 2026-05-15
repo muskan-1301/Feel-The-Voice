@@ -1,11 +1,9 @@
-# Feel The Voice (Neural Speech Analyzer)
+# Feel The Voice 
 
 <div align="center">
   <img width="1200" height="475" alt="Feel The Voice Banner" src="./banner.png" />
   
-  <p align="center">
-    <strong>Enterprise-grade neural speech analysis. Transcribe, translate, and extract deep emotional intelligence from any audio source in milliseconds.</strong>
-  </p>
+
 
   [![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
   [![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
