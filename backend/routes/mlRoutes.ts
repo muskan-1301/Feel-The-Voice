@@ -44,8 +44,6 @@ router.post('/pipeline/vectorize', (req, res) => {
     setTimeout(() => res.json({ status: 'ok', msg: '[VECTOR DB] Embeddings mapped in hyperspace' }), 300);
 });
 
-export default router;
-
 router.post("/embeddings", async (req, res) => {
   try {
     const { texts } = req.body;
@@ -141,3 +139,5 @@ router.post("/tts", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+export default router;
