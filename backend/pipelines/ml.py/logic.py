@@ -2,132 +2,310 @@ import os
 import json
 import re
 import nltk
+import numpy as np
 import google.generativeai as genai
 
 from nltk.tokenize import sent_tokenize
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import KMeans
+
+# ---------------- SETUP ----------------
 
 nltk.download("punkt", quiet=True)
 
-# Gemini API
 genai.configure(
     api_key=os.getenv("GEMINI_API_KEY")
 )
 
-# Embedding model
-model = SentenceTransformer("all-MiniLM-L6-v2")
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
-# ---------------- CHUNK TEXT ----------------
+# ---------------- STEP 1: TOKENIZER ----------------
 
-def chunk_text(text, chunk_size=3):
-    sentences = sent_tokenize(text)
+def tokenize_and_chunk(transcript, chunk_size=3):
+
+    sentences = sent_tokenize(transcript)
 
     chunks = []
 
     for i in range(0, len(sentences), chunk_size):
-        chunks.append(
-            " ".join(sentences[i:i + chunk_size])
+
+        chunk = " ".join(
+            sentences[i:i + chunk_size]
         )
+
+        if chunk.strip():
+            chunks.append(chunk)
 
     return chunks
 
 
-# ---------------- CREATE EMBEDDINGS ----------------
+# ---------------- STEP 2: EMBEDDINGS ----------------
 
 def create_embeddings(chunks):
-    return model.encode(chunks, convert_to_numpy=True)
+
+    embeddings = embedding_model.encode(
+        chunks,
+        convert_to_numpy=True
+    )
+
+    return embeddings
 
 
-# ---------------- GET SUMMARY + EMOTION ----------------
+# ---------------- STEP 3: IMPORTANT CHUNKS ----------------
 
-def analyze_transcript(chunks):
+def get_important_chunks(
+    chunks,
+    embeddings,
+    top_k=5
+):
+
+    similarity_matrix = cosine_similarity(
+        embeddings
+    )
+
+    np.fill_diagonal(
+        similarity_matrix,
+        0
+    )
+
+    scores = similarity_matrix.mean(axis=1)
+
+    top_indexes = np.argsort(
+        scores
+    )[::-1][:top_k]
+
+    important_chunks = [
+        chunks[i]
+        for i in top_indexes
+    ]
+
+    return important_chunks
+
+
+# ---------------- STEP 4: TOPIC EXTRACTION (ML) ----------------
+
+def extract_topics(
+    chunks,
+    embeddings,
+    num_topics=3
+):
+
+    n_clusters = min(
+        num_topics,
+        len(chunks)
+    )
+
+    kmeans = KMeans(
+        n_clusters=n_clusters,
+        random_state=42,
+        n_init=10
+    )
+
+    labels = kmeans.fit_predict(
+        embeddings
+    )
+
+    topics = []
+
+    for topic_id in range(n_clusters):
+
+        indices = [
+            i for i, label in enumerate(labels)
+            if label == topic_id
+        ]
+
+        representative_chunk = chunks[
+            indices[0]
+        ]
+        confidence = round(
+        len(indices) / len(chunks),
+        2
+    )
+
+    topics.append({
+        "topic": f"Topic {topic_id + 1}",
+        "text": representative_chunk,
+        "confidence": confidence
+    })
+
+    return topics
+
+
+# ---------------- STEP 5: GEMINI INSIGHTS ----------------
+
+def generate_insights(
+    important_chunks,
+    topics
+):
+
+    chunk_text = "\n".join(
+        important_chunks
+    )
+
+    topic_text = "\n".join([
+        t["text"]
+        for t in topics
+    ])
 
     prompt = f"""
     Analyze this transcript.
 
-    Return JSON only:
+    Topics:
+    {topic_text}
+
+    Transcript:
+    {chunk_text}
+
+    Return ONLY JSON:
 
     {{
       "summary": "",
       "emotion": "",
       "sentiment": ""
     }}
-
-    Transcript:
-    {chr(10).join(chunks)}
     """
 
-    gemini = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel(
+        "gemini-1.5-flash"
+    )
 
-    response = gemini.generate_content(prompt)
+    response = model.generate_content(
+        prompt
+    )
 
     text = response.text.strip()
 
-    text = re.sub(r"```json|```", "", text).strip()
+    text = re.sub(
+        r"```json|```",
+        "",
+        text
+    ).strip()
 
     return json.loads(text)
 
 
-# ---------------- ASK QUESTIONS ----------------
+# ---------------- STEP 6: RAG STORE ----------------
 
-def ask_question(question, chunks, embeddings):
+class RAGStore:
 
-    query_embedding = model.encode(
-        [question],
-        convert_to_numpy=True
+    def __init__(
+        self,
+        chunks,
+        embeddings
+    ):
+
+        self.chunks = chunks
+        self.embeddings = embeddings
+
+    def search(
+        self,
+        query,
+        top_k=3
+    ):
+
+        query_embedding = embedding_model.encode(
+            [query],
+            convert_to_numpy=True
+        )
+
+        scores = cosine_similarity(
+            query_embedding,
+            self.embeddings
+        )[0]
+
+        top_indexes = np.argsort(
+            scores
+        )[::-1][:top_k]
+
+        return [
+            self.chunks[i]
+            for i in top_indexes
+        ]
+
+
+# ---------------- STEP 7: RAG CHATBOT ----------------
+
+def rag_answer(
+    question,
+    store,
+    insights
+):
+
+    retrieved_chunks = store.search(
+        question
     )
 
-    scores = cosine_similarity(
-        query_embedding,
-        embeddings
-    )[0]
-
-    best_index = scores.argmax()
-
-    context = chunks[best_index]
+    context = "\n".join(
+        retrieved_chunks
+    )
 
     prompt = f"""
-    Answer only using this context:
+    Transcript Summary:
+    {insights["summary"]}
 
+    Context:
     {context}
 
     Question:
     {question}
+
+    Answer only using the context.
     """
 
-    gemini = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel(
+        "gemini-1.5-flash"
+    )
 
-    response = gemini.generate_content(prompt)
+    response = model.generate_content(
+        prompt
+    )
 
     return response.text
 
 
-# ---------------- MAIN ----------------
+# ---------------- MAIN PIPELINE ----------------
 
-if __name__ == "__main__":
+def run_pipeline(transcript):
 
-    transcript = """
-    Revenue increased this quarter.
-    Marketing campaigns performed well.
-    Customer feedback was positive.
-    """
+    # Step 1
+    chunks = tokenize_and_chunk(
+        transcript
+    )
 
-    chunks = chunk_text(transcript)
+    # Step 2
+    embeddings = create_embeddings(
+        chunks
+    )
 
-    embeddings = create_embeddings(chunks)
-
-    insights = analyze_transcript(chunks)
-
-    print("\nInsights:")
-    print(insights)
-
-    answer = ask_question(
-        "How was customer feedback?",
+    # Step 3
+    important_chunks = get_important_chunks(
         chunks,
         embeddings
     )
 
-    print("\nAnswer:")
-    print(answer)
+    # Step 4
+    topics = extract_topics(
+        chunks,
+        embeddings
+    )
+
+    # Step 5
+    insights = generate_insights(
+        important_chunks,
+        topics
+    )
+
+    # Step 6
+    store = RAGStore(
+        chunks,
+        embeddings
+    )
+
+    return {
+        "topics": topics,
+        "insights": insights,
+        "store": store
+    }
+

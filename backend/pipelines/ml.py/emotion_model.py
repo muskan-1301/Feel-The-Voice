@@ -1,5 +1,41 @@
 import torch
 import torch.nn as nn
+import librosa
+import numpy as np
+import soundfile as sf
+from collections import Counter
+from model import EmotionModel
+
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
+def load_model(model_path='best_model.pt'):
+    model = EmotionModel().to(DEVICE)
+    model.load_state_dict(torch.load(
+        model_path,
+        map_location=DEVICE,
+        weights_only=False
+    ))
+    model.eval()
+    return model
+
+def chunk_audio(audio, sr, chunk_sec=2, overlap=0.5):
+    chunk_len = int(chunk_sec * sr)
+    step = int(chunk_len * (1 - overlap))
+    chunks = []
+    for start in range(0, len(audio) - chunk_len, step):
+        chunks.append(audio[start:start + chunk_len])
+    return chunks
+
+def extract_features(chunk, sr):
+    mfcc = librosa.feature.mfcc(y=chunk, sr=sr, n_mfcc=40)
+    mfcc_delta = librosa.feature.delta(mfcc)
+    mfcc_delta2 = librosa.feature.delta(mfcc, order=2)
+    energy = librosa.feature.rms(y=chunk)
+    zcr = librosa.feature.zero_crossing_rate(y=chunk)
+    combined = np.vstack([mfcc, mfcc_delta, mfcc_delta2, energy, zcr])
+    return combined  # shape: (122, T)
+
 
 class EmotionModel(nn.Module):
     def __init__(self, n_features=122, n_classes=8):
