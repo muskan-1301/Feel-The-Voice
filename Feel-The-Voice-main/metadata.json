@@ -1,0 +1,6 @@
+{
+  "name": "Neural Speech Analyzer",
+  "description": "Multilingual Real-Time Speech Analysis System with Emotion Detection and Insights",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": []
+}
